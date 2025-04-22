@@ -163,35 +163,34 @@ Vamos a crear nuestro dashboard interactivo con Stramlit.
 ```python
 def create_visualizations(df: pd.DataFrame):
     """Create all dashboard visualizations"""
-    if len(df) > 0:
-        # Protocol distribution
-        protocol_counts = df['protocol'].value_counts()
-        fig_protocol = px.pie(
-            values=protocol_counts.values,
-            names=protocol_counts.index,
-            title="Protocol Distribution"
-        )
-        st.plotly_chart(fig_protocol, use_container_width=True)
+    
+    if df.empty:
+        st.info("No packet data available yet.")
+        return
+    
+    protocol_counts = df['protocol'].value_counts()
+    fig_protocol = px.pie(values=protocol_counts.values, names=protocol_counts.index, title="Protocol Distribution")
+    st.plotly_chart(fig_protocol, use_container_width=True)
 
-        # Packets timeline
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df_grouped = df.groupby(df['timestamp'].dt.floor('S')).size()
-        fig_timeline = px.line(
-            x=df_grouped.index,
-            y=df_grouped.values,
-            title="Packets per Second"
-        )
-        st.plotly_chart(fig_timeline, use_container_width=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df_grouped = df.groupby(df['timestamp'].dt.floor('s')).size()
+    fig_timeline = px.line(x=df_grouped.index, y=df_grouped.values, title="Packets per Second")
+    st.plotly_chart(fig_timeline, use_container_width=True)
 
-        # Top source IPs
-        top_sources = df['source'].value_counts().head(10)
-        fig_sources = px.bar(
-            x=top_sources.index,
-            y=top_sources.values,
-            title="Top Source IP Addresses"
-        )
-        st.plotly_chart(fig_sources, use_container_width=True)
+    top_sources = df['source'].value_counts().head(10)
+    fig_sources = px.bar(x=top_sources.index, y=top_sources.values, title="Top Source IP Addresses")
+    st.plotly_chart(fig_sources, use_container_width=True)
 
+def start_packet_capture(interface: str):
+    processor = PacketProcessor()
+
+    def capture_packets():
+        sniff(prn=processor.process_packet, store=False, iface=interface)
+
+    capture_thread = threading.Thread(target=capture_packets, daemon=True)
+    capture_thread.start()
+
+    return processor
 ```
 
 Esta funcion tomara el dataframe y nos ayudara a crear 3 graficos:
@@ -200,6 +199,7 @@ Esta funcion tomara el dataframe y nos ayudara a crear 3 graficos:
 - Grafico de linea de paquetes: Nos mostrara la cantidad de paquetes procesados por segundo en un periodo de tiempo
 - Grafico de direcciones ip de origen: Este grafico nos mostrara el top 10 de direcciones ip que mas paquetes enviaron en el trafico
 
+Modifique la funcion que venia en el ejemplo, en escencia realiza lo mismo, sin embargo la funcion es diferente debido a un error que tenia
 
 
 ### Como capturar los paquetes de red
@@ -221,3 +221,77 @@ def start_packet_capture():
     return processor
 
 ```
+
+### Agregado, funcion que nos permite simular paquetes
+
+Vamos a crear la siguiente funcion
+
+```python
+def simulate_packets(processor: PacketProcessor):
+    for _ in range(10):
+        fake_packet = {
+            'timestamp': datetime.now(),
+            'source': f'192.168.1.{random.randint(1, 100)}',
+            'destination': f'10.0.0.{random.randint(1, 100)}',
+            'protocol': random.choice(['TCP', 'UDP', 'ICMP']),
+            'size': random.randint(40, 1500),
+            'time_relative': (datetime.now() - processor.start_time).total_seconds(),
+        }
+        processor.packet_data.append(fake_packet)
+
+```
+
+Esta funcion nos permite crear paquetes simulados, los cuales nos sirven para ver como se comporta nuestro dashboard
+
+### Funcion main que ejecuta todo el dashboard
+```python
+def main():
+    """Main function to run the dashboard"""
+    st.set_page_config(page_title="Network Traffic Analysis", layout="wide")
+    st.title("Real-time Network Traffic Analysis")
+
+    if 'interface' not in st.session_state:
+        interfaces = get_if_list()
+        selected_interface = st.selectbox("Select a network interface", interfaces)
+        if st.button("Start Capture"):
+            st.session_state.interface = selected_interface
+            st.session_state.processor = start_packet_capture(selected_interface)
+            st.session_state.start_time = time.time()
+            st.rerun()
+        st.stop()
+
+    processor = st.session_state.processor
+    df = processor.get_dataframe()
+
+    st.sidebar.markdown("## Opciones")
+    if st.sidebar.button("Simular tráfico"):
+        simulate_packets(processor)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Packets", len(df))
+    with col2:
+        duration = time.time() - st.session_state.start_time
+        st.metric("Capture Duration", f"{duration:.2f}s")
+
+    st.write("### Datos capturados (para depuración)")
+    # Convertir flags a string para evitar errores de conversión
+    if "tcp_flags" in df.columns:
+        df["tcp_flags"] = df["tcp_flags"].astype(str)
+
+    # Mostrar los últimos 10 paquetes
+    st.dataframe(df.tail(10))
+
+
+    create_visualizations(df)
+
+    if st.button('Actualizar'):
+        st.rerun()
+
+if __name__ == "__main__":
+    main()
+
+```
+
+# Comentarios Finales
+Al final te recomiendo revisar la version final del codigo porque realice cambios.
