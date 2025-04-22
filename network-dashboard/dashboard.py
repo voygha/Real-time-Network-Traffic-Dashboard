@@ -1,58 +1,3 @@
-# Inicializacion del proyecto
-
-Para este proyecto estoy usando linux, por lo cual algunos comandos pueden cambiar dependiendo el sistema operativo o la distribucion de linux que tengas.
-
-
-Creemos las siguientes carpetas:
-
-- Abrimos una terminal:
-
-
-```bash
-mkdir network-dashboard
-cd network-dashboard
-```
-
-
-## requirements.txt
-Creamos el requirements.txt
-
-con el siguiente contenido:
-
-streamlit
-pandas
-scapy
-plotly
-
-## Entorno Virtual
-Vamos a crear un entorno virtual e instalar el requirements.txt
-
-Ejecutamos los siguientes comandos:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-Hasta este punto ya tienes instaladas las librerias que utilizaremos
-
-Debes tener una salida similar a esto:
-
-![Inicializacion del Proyecto](/network-dashboard/capturas/image.png)
-
-
-# Construccion de las funcionalidades principales
-
-Vamos a crear un archivo llamado `dashboard.py`
-
-## `dashboard.py`
-
-Toda la configuracion que realicemos aqui esta sobre el archivo dashboard
-
-Agregamos los siguientes imports:
-
-```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -66,31 +11,19 @@ import warnings
 import logging
 from typing import Dict, List, Optional
 import socket
-```
 
-### Construccion del Loggin
-
-Ahora configuraremos un loggin basico
+from scapy.all import sniff, IP, TCP, UDP
 
 
-Dentro de dashboard.py agregamos:
 
-
-```python
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-```
 
 
-### Construccion del procesador de paquetes
-
-Construiremos nuestro procesador de paquetes en la siguiente clase:
-
-```python
 class PacketProcessor:
     """Process and analyze network packets"""
 
@@ -152,15 +85,8 @@ class PacketProcessor:
         """Convert packet data to pandas DataFrame"""
         with self.lock:
             return pd.DataFrame(self.packet_data)
-```
-
-### Como crear visualizaciones del Streamlit
-
-Vamos a crear nuestro dashboard interactivo con Stramlit.
-
-- Crearemos la funcion llamada create_visualization con el siguiente contenido:
-
-```python
+        
+        
 def create_visualizations(df: pd.DataFrame):
     """Create all dashboard visualizations"""
     if len(df) > 0:
@@ -191,33 +117,63 @@ def create_visualizations(df: pd.DataFrame):
             title="Top Source IP Addresses"
         )
         st.plotly_chart(fig_sources, use_container_width=True)
-
-```
-
-Esta funcion tomara el dataframe y nos ayudara a crear 3 graficos:
-
-- Grafico de distribucion de protocolos: Nos mostrara la proporcion de diferentes protocolos en el trafico de paquetes capturado
-- Grafico de linea de paquetes: Nos mostrara la cantidad de paquetes procesados por segundo en un periodo de tiempo
-- Grafico de direcciones ip de origen: Este grafico nos mostrara el top 10 de direcciones ip que mas paquetes enviaron en el trafico
-
-
-
-### Como capturar los paquetes de red
-
-Vamos a crear la funcionalidad que nos permita capturar los paquetes de red:
-
-
-```python
+        
+        
 def start_packet_capture():
     """Start packet capture in a separate thread"""
     processor = PacketProcessor()
 
     def capture_packets():
-        sniff(prn=processor.process_packet, store=False)
+        sniff(prn=processor.process_packet, store=False, iface="wlan0")
+
 
     capture_thread = threading.Thread(target=capture_packets, daemon=True)
     capture_thread.start()
 
     return processor
 
-```
+
+
+def main():
+    """Main function to run the dashboard"""
+    st.set_page_config(page_title="Network Traffic Analysis", layout="wide")
+    st.title("Real-time Network Traffic Analysis")
+
+    # Initialize packet processor in session state
+    if 'processor' not in st.session_state:
+        st.session_state.processor = start_packet_capture()
+        st.session_state.start_time = time.time()
+
+    # Create dashboard layout
+    col1, col2 = st.columns(2)
+
+    # Get current data
+    df = st.session_state.processor.get_dataframe()
+    st.write(df)
+
+
+    # Display metrics
+    with col1:
+        st.metric("Total Packets", len(df))
+    with col2:
+        duration = time.time() - st.session_state.start_time
+        st.metric("Capture Duration", f"{duration:.2f}s")
+
+    # Display visualizations
+    create_visualizations(df)
+
+    # Display recent packets
+    st.subheader("Recent Packets")
+    if len(df) > 0:
+        st.dataframe(
+            df.tail(10)[['timestamp', 'source', 'destination', 'protocol', 'size']],
+            use_container_width=True
+        )
+
+    # Add refresh button
+    if st.button('Refresh Data'):
+        st.rerun()
+
+    # Auto refresh
+    time.sleep(2)
+    st.rerun()
