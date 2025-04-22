@@ -1,0 +1,25 @@
+# Entorno virtual
+venv/
+.env/
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de log
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de configuración del editor
+.vscode/
+.idea/
+
+# Archivos de Jupyter (opcional)
+.ipynb_checkpoints/
+
+# Archivos de Streamlit
+.streamlit/secrets.toml
